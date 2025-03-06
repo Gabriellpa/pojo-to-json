@@ -169,18 +169,35 @@ public class Person extends User {
             const pojoText = document.getElementById('pojoInput').value.trim();
             
             // Capture the class and its parent (if any)
-            const classRegex = new RegExp(`class\\s+${className}\\s*(extends\\s+\\w+\\s*)?{([\\s\\S]*?)}`, 'g');
+            const classRegex = new RegExp(`class\\s+${className}\\s*(extends\\s+\\w+|implements\\s+\\w+)?\\s*{([\\s\\S]*?)}`, 'g');
             const classMatch = classRegex.exec(pojoText);
 
             if (classMatch) {
-                // Capture parent class if exists
-                const parentClass = classMatch[1] ? classMatch[1].replace('extends', '').trim() : null;
+                // Capture parent class or interfaces (if exists)
+                const extendsOrImplements = classMatch[1] ? classMatch[1].trim() : null;
+                let parentClass = null;
+                
+                // If extends is present, capture the parent class name
+                if (extendsOrImplements && extendsOrImplements.trim().startsWith('extends')) {
+                    parentClass = extendsOrImplements.replace('extends', '').trim();
+                }
 
-                // If the class has a parent, generate defaults for the parent first
+                // If implements is present, it might be multiple interfaces, handle them separately
+                const interfaces = extendsOrImplements && extendsOrImplements.startsWith('implements') 
+                    ? extendsOrImplements.replace('implements', '').trim().split(/\s+/)
+                    : [];
+
+                // If the class has a parent, generate defaults for the parent class first
                 if (parentClass) {
                     const parentDefaults = generateObjectDefaults(parentClass);
                     Object.assign(nestedClassDefaults, parentDefaults);
                 }
+
+                // Handle interfaces (add interface field defaults if necessary)
+                interfaces.forEach(interfaceName => {
+                    const interfaceDefaults = generateObjectDefaults(interfaceName);
+                    Object.assign(nestedClassDefaults, interfaceDefaults);
+                });
 
                 // Now process the fields of the current class
                 const fieldRegex = /private\s+([a-zA-Z0-9<>,\s]+)\s+([a-zA-Z0-9]+);/g;
@@ -193,6 +210,7 @@ public class Person extends User {
             }
             return nestedClassDefaults;
         }
+
         function getListDefaultValue(type) {
             const defaultValue = getDefaultValue(type);
             if (Array.isArray(defaultValue)) return [defaultValue[0]];
@@ -226,94 +244,6 @@ public class Person extends User {
             return classCount > closingCount; // O campo deve estar dentro de uma classe, se houver mais { do que }
         }
 
-        function convertPojoToJson2() {
-            let pojoText = document.getElementById('pojoInput').value.trim();
-            if (!pojoText) {
-                alert('Please enter a POJO class!');
-                return;
-            }
-            // Valida se a sintaxe está correta (abertura/fechamento de chaves)
-            if (!isValidPojoSyntax(pojoText)) {
-                alert('POJO class has mismatched or missing braces!');
-                return;
-            }
-
-            pojoText = pojoText.replace(/import.*;/g, '').replace(/@.*\n/g, '').trim();
-            const classNameMatch = pojoText.match(/class\s+(\w+)\s+/);
-            if (!classNameMatch) {
-                alert('Invalid POJO format');
-                return;
-            }
-            const className = classNameMatch[1];
-            const fieldRegex = /private\s+([a-zA-Z0-9<>,\s]+)\s+([a-zA-Z0-9]+);/g;
-            const fields = [];
-            let match;
-            while ((match = fieldRegex.exec(pojoText)) !== null) {
-                const fieldPosition = match.index;
-
-                // Verifica se o campo está dentro de uma classe
-                if (!isFieldInsideClass(pojoText, fieldPosition)) {
-                    alert('A private field is declared outside of any class!');
-                    return;
-                }
-                fields.push({ type: match[1].trim(), name: match[2] });
-            }
-            const jsonObject = {};
-            fields.forEach(field => {
-                jsonObject[field.name] = getDefaultValue(field.type);
-            });
-            document.getElementById('result').textContent = JSON.stringify(resultJson, null, 4);
-        }
-
-        function convertPojoToJson3() {
-            let pojoText = document.getElementById('pojoInput').value.trim();
-            if (!pojoText) {
-                alert('Please enter a POJO class!');
-                return;
-            }
-            // Valida se a sintaxe está correta (abertura/fechamento de chaves)
-            if (!isValidPojoSyntax(pojoText)) {
-                alert('POJO class has mismatched or missing braces!');
-                return;
-            }
-
-            pojoText = pojoText.replace(/import.*;/g, '').replace(/@.*\n/g, '').trim();
-
-            // Regex para capturar classes, incluindo as que utilizam 'extends'
-            const classRegex = /class\s+(\w+)(\s+extends\s+\w+)?\s*{([^}]*?)}/g;
-
-            let match;
-            const resultJson = {};
-
-            // Iterar por todas as classes no POJO
-            while ((match = classRegex.exec(pojoText)) !== null) {
-                const className = match[1]; // Nome da classe
-                const extendsPart = match[2]; // Captura o 'extends' se houver
-                const classBody = match[3]; // Corpo da classe (os campos)
-
-                const fields = [];
-                const fieldRegex = /private\s+([a-zA-Z0-9<>,\s]+)\s+([a-zA-Z0-9]+);/g;
-                let fieldMatch;
-                
-                // Iterar pelos campos dentro da classe
-                while ((fieldMatch = fieldRegex.exec(classBody)) !== null) {
-                    const fieldPosition = fieldMatch.index;
-
-                    fields.push({ type: fieldMatch[1].trim(), name: fieldMatch[2] });
-                }
-
-                const jsonObject = {};
-                fields.forEach(field => {
-                    jsonObject[field.name] = getDefaultValue(field.type);
-                });
-
-                // Adicionar a classe e seus campos no resultado
-                resultJson[className] = jsonObject;
-            }
-
-           document.getElementById('result').textContent = JSON.stringify(resultJson, null, 4);
-    }
-
         function convertPojoToJson() {
             let pojoText = document.getElementById('pojoInput').value.trim();
             if (!pojoText) {
@@ -330,7 +260,7 @@ public class Person extends User {
             pojoText = pojoText.replace(/import.*;/g, '').replace(/@.*\n/g, '').trim();
 
             // Regex to capture classes, including the extends part
-            const classRegex = /class\s+(\w+)(\s+extends\s+\w+)?\s*{([^}]*?)}/g;
+            const classRegex = /class\s+(\w+)(\s+(extends|implements)\s+\w+)?\s*{([^}]*?)}/g;
 
             let match;
             const resultJson = {};
@@ -339,11 +269,12 @@ public class Person extends User {
             // First, capture all the classes
             while ((match = classRegex.exec(pojoText)) !== null) {
                 const className = match[1];
-                const extendsPart = match[2];
-                const classBody = match[3];
+                const extendsOrImplementsPart = match[2];
+                const classBody = match[4];
 
-                // Capture the parent class (if exists)
-                const parentClassName = extendsPart ? extendsPart.trim().split(' ')[1] : null;
+                // Determine if the class extends or implements anything
+                const isExtending = extendsOrImplementsPart?.trim().startsWith('extends');
+                const parentClassName = isExtending ? extendsOrImplementsPart.trim().split(' ')[1] : null;
 
                 // Extract the fields of the current class
                 const fields = [];
