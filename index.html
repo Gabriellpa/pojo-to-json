@@ -79,9 +79,8 @@
 import java.util.List;
 import java.util.Map;
 
-public class User {
-    private String username;
-    private String email;
+public enum Status {
+    ACTIVE, INACTIVE, PENDING;
 }
 
 public class Address {
@@ -90,12 +89,19 @@ public class Address {
     private String zipCode;
 }
 
+public class User {
+    private String username;
+    private String email;
+    private Long age;
+}
+
 public class Person extends User {
     private String name;
     private List<Address> addresses;
     private boolean isActive;
     private Map<String, String> metadata;
     private Map<String, Address> additionalInfo;
+    private Status status;  // Enum field
 }
         </textarea>
         <button onclick="convertPojoToJson()">Convert to JSON</button>
@@ -114,11 +120,16 @@ public class Person extends User {
                 const keyType = types[0].trim();
                 const valueType = types[1].trim();
                 return getMapDefaultValue(keyType, valueType);
+                //return { [getDefaultValue(keyType)]: getDefaultValue(valueType) };
+            }
+            // Check for Enum types by verifying the first letter is uppercase
+            if (isEnum(type)) {
+                return getEnumDefaultValue(type);
             }
             switch (type) {
                 case 'String': return 'string';
                 case 'int': case 'Integer': return 0;
-                case 'long': case 'Long': return 0n;
+                case 'long': case 'Long': return 0;
                 case 'float': case 'Float': return 0.0;
                 case 'double': case 'Double': return 0.0;
                 case 'BigDecimal': return "0.0";
@@ -131,6 +142,28 @@ public class Person extends User {
                     return null;
             }
         }
+
+        // Check if a type is an enum by scanning the POJO text
+        function isEnum(type) {
+            const pojoText = document.getElementById('pojoInput').value.trim();
+            // Match enum declarations in the POJO text
+            const enumRegex = new RegExp(`enum\\s+${type}\\s*{[\\s\\S]*?}`, 'g');
+            return enumRegex.test(pojoText);
+        }
+
+        // Enum default values are returned based on their constant names
+        function getEnumDefaultValue(enumType) {
+            // Extract enum class and constants
+            const pojoText = document.getElementById('pojoInput').value.trim();
+            const enumRegex = new RegExp(`enum\\s+${enumType}\\s*{([\\s\\S]*?)}`, 'g');
+            const enumMatch = enumRegex.exec(pojoText);
+            if (enumMatch) {
+                const enumValues = enumMatch[1].split(",").map(val => val.trim());
+                return enumValues[0]; // Return the first value of the enum
+            }
+            return enumType;  // Fallback to type name if enum constants are not found
+        }
+
         function generateObjectDefaults(className) {
             const nestedClassDefaults = {};
             const pojoText = document.getElementById('pojoInput').value.trim();
