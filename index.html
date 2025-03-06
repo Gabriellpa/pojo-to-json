@@ -167,12 +167,25 @@ public class Person extends User {
         function generateObjectDefaults(className) {
             const nestedClassDefaults = {};
             const pojoText = document.getElementById('pojoInput').value.trim();
-            const classRegex = new RegExp(`class\\s+${className}\\s*{([\\s\\S]*?)}`, 'g');
+            
+            // Capture the class and its parent (if any)
+            const classRegex = new RegExp(`class\\s+${className}\\s*(extends\\s+\\w+\\s*)?{([\\s\\S]*?)}`, 'g');
             const classMatch = classRegex.exec(pojoText);
+
             if (classMatch) {
+                // Capture parent class if exists
+                const parentClass = classMatch[1] ? classMatch[1].replace('extends', '').trim() : null;
+
+                // If the class has a parent, generate defaults for the parent first
+                if (parentClass) {
+                    const parentDefaults = generateObjectDefaults(parentClass);
+                    Object.assign(nestedClassDefaults, parentDefaults);
+                }
+
+                // Now process the fields of the current class
                 const fieldRegex = /private\s+([a-zA-Z0-9<>,\s]+)\s+([a-zA-Z0-9]+);/g;
                 let fieldMatch;
-                while ((fieldMatch = fieldRegex.exec(classMatch[1])) !== null) {
+                while ((fieldMatch = fieldRegex.exec(classMatch[2])) !== null) {
                     const fieldType = fieldMatch[1];
                     const fieldName = fieldMatch[2];
                     nestedClassDefaults[fieldName] = getDefaultValue(fieldType);
@@ -196,12 +209,35 @@ public class Person extends User {
             }
             return mapObject;
         }
-        function convertPojoToJson() {
+
+        // Função para validar a sintaxe de classes e enums
+        function isValidPojoSyntax(pojoText) {
+            const classCount = (pojoText.match(/{/g) || []).length;
+            const closingCount = (pojoText.match(/}/g) || []).length;
+
+            // Verifica se o número de chaves abertas e fechadas está correto
+            return classCount === closingCount;
+        }
+
+        function isFieldInsideClass(pojoText, fieldPosition) {
+            // Verifica se a posição do campo está dentro de uma classe
+            const classCount = (pojoText.substring(0, fieldPosition).match(/{/g) || []).length;
+            const closingCount = (pojoText.substring(0, fieldPosition).match(/}/g) || []).length;
+            return classCount > closingCount; // O campo deve estar dentro de uma classe, se houver mais { do que }
+        }
+
+        function convertPojoToJson2() {
             let pojoText = document.getElementById('pojoInput').value.trim();
             if (!pojoText) {
                 alert('Please enter a POJO class!');
                 return;
             }
+            // Valida se a sintaxe está correta (abertura/fechamento de chaves)
+            if (!isValidPojoSyntax(pojoText)) {
+                alert('POJO class has mismatched or missing braces!');
+                return;
+            }
+
             pojoText = pojoText.replace(/import.*;/g, '').replace(/@.*\n/g, '').trim();
             const classNameMatch = pojoText.match(/class\s+(\w+)\s+/);
             if (!classNameMatch) {
@@ -213,14 +249,143 @@ public class Person extends User {
             const fields = [];
             let match;
             while ((match = fieldRegex.exec(pojoText)) !== null) {
+                const fieldPosition = match.index;
+
+                // Verifica se o campo está dentro de uma classe
+                if (!isFieldInsideClass(pojoText, fieldPosition)) {
+                    alert('A private field is declared outside of any class!');
+                    return;
+                }
                 fields.push({ type: match[1].trim(), name: match[2] });
             }
             const jsonObject = {};
             fields.forEach(field => {
                 jsonObject[field.name] = getDefaultValue(field.type);
             });
-            document.getElementById('result').textContent = JSON.stringify(jsonObject, null, 4);
+            document.getElementById('result').textContent = JSON.stringify(resultJson, null, 4);
         }
+
+        function convertPojoToJson3() {
+            let pojoText = document.getElementById('pojoInput').value.trim();
+            if (!pojoText) {
+                alert('Please enter a POJO class!');
+                return;
+            }
+            // Valida se a sintaxe está correta (abertura/fechamento de chaves)
+            if (!isValidPojoSyntax(pojoText)) {
+                alert('POJO class has mismatched or missing braces!');
+                return;
+            }
+
+            pojoText = pojoText.replace(/import.*;/g, '').replace(/@.*\n/g, '').trim();
+
+            // Regex para capturar classes, incluindo as que utilizam 'extends'
+            const classRegex = /class\s+(\w+)(\s+extends\s+\w+)?\s*{([^}]*?)}/g;
+
+            let match;
+            const resultJson = {};
+
+            // Iterar por todas as classes no POJO
+            while ((match = classRegex.exec(pojoText)) !== null) {
+                const className = match[1]; // Nome da classe
+                const extendsPart = match[2]; // Captura o 'extends' se houver
+                const classBody = match[3]; // Corpo da classe (os campos)
+
+                const fields = [];
+                const fieldRegex = /private\s+([a-zA-Z0-9<>,\s]+)\s+([a-zA-Z0-9]+);/g;
+                let fieldMatch;
+                
+                // Iterar pelos campos dentro da classe
+                while ((fieldMatch = fieldRegex.exec(classBody)) !== null) {
+                    const fieldPosition = fieldMatch.index;
+
+                    fields.push({ type: fieldMatch[1].trim(), name: fieldMatch[2] });
+                }
+
+                const jsonObject = {};
+                fields.forEach(field => {
+                    jsonObject[field.name] = getDefaultValue(field.type);
+                });
+
+                // Adicionar a classe e seus campos no resultado
+                resultJson[className] = jsonObject;
+            }
+
+           document.getElementById('result').textContent = JSON.stringify(resultJson, null, 4);
+    }
+
+        function convertPojoToJson() {
+            let pojoText = document.getElementById('pojoInput').value.trim();
+            if (!pojoText) {
+                alert('Please enter a POJO class!');
+                return;
+            }
+
+            // Validate if the syntax is correct (brace matching)
+            if (!isValidPojoSyntax(pojoText)) {
+                alert('POJO class has mismatched or missing braces!');
+                return;
+            }
+
+            pojoText = pojoText.replace(/import.*;/g, '').replace(/@.*\n/g, '').trim();
+
+            // Regex to capture classes, including the extends part
+            const classRegex = /class\s+(\w+)(\s+extends\s+\w+)?\s*{([^}]*?)}/g;
+
+            let match;
+            const resultJson = {};
+            const classDefinitions = {};
+
+            // First, capture all the classes
+            while ((match = classRegex.exec(pojoText)) !== null) {
+                const className = match[1];
+                const extendsPart = match[2];
+                const classBody = match[3];
+
+                // Capture the parent class (if exists)
+                const parentClassName = extendsPart ? extendsPart.trim().split(' ')[1] : null;
+
+                // Extract the fields of the current class
+                const fields = [];
+                const fieldRegex = /private\s+([a-zA-Z0-9<>,\s]+)\s+([a-zA-Z0-9]+);/g;
+                let fieldMatch;
+                
+                // Iterate over the fields of the class
+                while ((fieldMatch = fieldRegex.exec(classBody)) !== null) {
+                    fields.push({ type: fieldMatch[1].trim(), name: fieldMatch[2] });
+                }
+
+                // Store class fields in a dictionary
+                classDefinitions[className] = {
+                    parentClass: parentClassName,
+                    fields: fields
+                };
+            }
+
+            // Now process each class and consider the inheritance
+            for (const className in classDefinitions) {
+                const { parentClass, fields } = classDefinitions[className];
+                const jsonObject = {};
+
+                // Add fields from the current class
+                fields.forEach(field => {
+                    jsonObject[field.name] = getDefaultValue(field.type);
+                });
+
+            // If there is a parent class, add its fields to the current class's JSON
+            if (parentClass) {
+                const parentFields = classDefinitions[parentClass]?.fields || [];
+                parentFields.forEach(parentField => {
+                    jsonObject[parentField.name] = getDefaultValue(parentField.type); // Add parent's field
+                });
+            }
+
+                resultJson[className] = jsonObject; // Add the class with its own fields
+            }
+
+        // Output the final result
+        document.getElementById('result').textContent = JSON.stringify(resultJson, null, 4);
+    }
     </script>
 </body>
 </html>
